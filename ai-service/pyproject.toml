@@ -1,0 +1,19 @@
+[project]
+name = "ai-service"
+version = "0.1.0"
+description = "ScholarAI AI service: PDF parsing, embedding, RAG and analysis"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "httpx>=0.27",
+    "pymupdf>=1.24",
+    "numpy>=1.26",
+    "pymysql>=1.1",
+    "python-dotenv>=1.0",
+    "pymilvus>=2.4",
+    "mineru-open-sdk>=0.2.5",
+    "json-repair>=0.64",
+]
