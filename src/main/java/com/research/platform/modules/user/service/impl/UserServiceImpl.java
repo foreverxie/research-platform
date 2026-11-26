@@ -3,6 +3,10 @@ package com.research.platform.modules.user.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.research.platform.common.exception.BusinessException;
+import com.research.platform.modules.role.entity.Role;
+import com.research.platform.modules.role.entity.UserRole;
+import com.research.platform.modules.role.mapper.RoleMapper;
+import com.research.platform.modules.role.mapper.UserRoleMapper;
 import com.research.platform.modules.user.convert.UserConvert;
 import com.research.platform.modules.user.dto.UserLoginDTO;
 import com.research.platform.modules.user.dto.UserPasswordUpdateDTO;
@@ -11,6 +15,7 @@ import com.research.platform.modules.user.dto.UserUpdateDTO;
 import com.research.platform.modules.user.entity.User;
 import com.research.platform.modules.user.mapper.UserMapper;
 import com.research.platform.modules.user.service.IUserService;
+import com.research.platform.modules.user.service.EmailVerificationService;
 import com.research.platform.modules.user.vo.UserLoginVO;
 import com.research.platform.modules.user.vo.UserVO;
 import com.research.platform.utils.CurrentUser;
@@ -22,20 +27,41 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
+
+    /**
+     * 新注册用户默认角色
+     */
+    private static final String DEFAULT_ROLE_CODE = "USER";
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final RedisSessionService redisSessionService;
+    private final RoleMapper roleMapper;
+    private final UserRoleMapper userRoleMapper;
+    private final EmailVerificationService emailVerificationService;
 
-    public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder, JwtUtils jwtUtils, RedisSessionService redisSessionService) {
+    public UserServiceImpl(
+            UserMapper userMapper,
+            PasswordEncoder passwordEncoder,
+            JwtUtils jwtUtils,
+            RedisSessionService redisSessionService,
+            RoleMapper roleMapper,
+            UserRoleMapper userRoleMapper,
+            EmailVerificationService emailVerificationService
+    ) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.redisSessionService = redisSessionService;
+        this.roleMapper = roleMapper;
+        this.userRoleMapper = userRoleMapper;
+        this.emailVerificationService = emailVerificationService;
     }
 
     /**
@@ -56,14 +82,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
 
         // 3. 规范化邮箱
-        String email = dto.getEmail();
-        if(email != null){
-            email = email.trim();
-
-            if(email.isEmpty()){
-                email = null;
-            }
-        }
+        String email = dto.getEmail().trim().toLowerCase();
+        emailVerificationService.verify(email, dto.getEmailCode());
         if(email != null){
             Long emailCount = userMapper.selectCount(new QueryWrapper<User>().eq("email", email));
             if(emailCount > 0){
@@ -100,9 +120,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
 
         User savedUser = userMapper.selectById(user.getId());
+        emailVerificationService.consume(email);
 
-        // 9. 转换为响应对象
-        return UserConvert.toVO(savedUser);
+        // 9. 分配默认角色
+        assignDefaultRole(savedUser.getId());
+
+        // 10. 转换为响应对象
+        return toVO(savedUser);
     }
 
     /**
@@ -112,18 +136,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
      */
     @Override
     public UserLoginVO login(UserLoginDTO dto) {
-        // 1. 获取用户名
-        String username = dto.getUsername().trim();
+        // 1. 规范化登录标识，兼容用户名登录并支持邮箱登录
+        String username = dto.getUsername() == null ? null : dto.getUsername().trim();
+        String email = dto.getEmail() == null ? null : dto.getEmail().trim();
+        boolean hasUsername = username != null && !username.isEmpty();
+        boolean hasEmail = email != null && !email.isEmpty();
 
-        // 2. 根据用户名查询用户
+        if (hasUsername == hasEmail) {
+            throw new BusinessException(400, "请输入用户名或邮箱登录");
+        }
+
+        // 2. 根据所选登录标识查询用户
         User user = userMapper.selectOne(
-                new QueryWrapper<User>()
-                        .eq("username", username)
+                new QueryWrapper<User>().eq(hasUsername ? "username" : "email", hasUsername ? username : email)
         );
 
         // 3. 用户不存在，或者密码错误
         if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
-            throw new BusinessException(401, "用户名或密码错误");
+            throw new BusinessException(401, "用户名/邮箱或密码错误");
         }
 
         // 4. 检查用户账号状态
@@ -148,7 +178,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         loginVO.setToken(token);
         loginVO.setTokenType("Bearer");
         loginVO.setExpiresIn(jwtUtils.getExpirationInSeconds());
-        loginVO.setUser(UserConvert.toVO(user));
+        loginVO.setUser(toVO(user));
 
         // 7. 返回登录结果
         return loginVO;
@@ -178,7 +208,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
 
         // 5. 转换为用户信息VO
-        return UserConvert.toVO(user);
+        return toVO(user);
 
     }
 
@@ -230,17 +260,25 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             }
         }
 
-        // 6. 更新用户资料
-        user.setNickname(dto.getNickname() == null ? null : dto.getNickname().trim());
-        user.setEmail(email);
-        user.setAvatar(dto.getAvatar() == null ? null : dto.getAvatar().trim());
+        // 6. 更新用户资料：仅更新请求中出现的字段，避免未传字段被清空
+        if (dto.getNickname() != null) {
+            String nickname = dto.getNickname().trim();
+            user.setNickname(nickname.isEmpty() ? null : nickname);
+        }
+        if (dto.getEmail() != null) {
+            user.setEmail(email);
+        }
+        if (dto.getAvatar() != null) {
+            String avatar = dto.getAvatar().trim();
+            user.setAvatar(avatar.isEmpty() ? null : avatar);
+        }
         userMapper.updateById(user);
 
         // 8. 重新查询，获取最新数据库数据
         User updatedUser = userMapper.selectById(userId);
 
         // 9. 转换为VO并返回
-        return UserConvert.toVO(updatedUser);
+        return toVO(updatedUser);
 
     }
 
@@ -303,5 +341,66 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         redisSessionService.deleteToken(userId);
     }
 
+    /**
+     * 转换为包含角色编码的 VO
+     */
+    private UserVO toVO(User user) {
+        UserVO vo = UserConvert.toVO(user);
+
+        if (vo != null) {
+            vo.setRoles(loadRoleCodes(user.getId()));
+        }
+
+        return vo;
+    }
+
+    /**
+     * 查询用户的角色编码
+     */
+    private List<String> loadRoleCodes(Long userId) {
+        List<UserRole> relations = userRoleMapper.selectList(
+                new QueryWrapper<UserRole>().eq("user_id", userId)
+        );
+
+        if (relations.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> roleIds = relations.stream()
+                .map(UserRole::getRoleId)
+                .toList();
+
+        return roleMapper.selectBatchIds(roleIds).stream()
+                .map(Role::getRoleCode)
+                .toList();
+    }
+
+    /**
+     * 为新用户分配默认角色 USER
+     */
+    private void assignDefaultRole(Long userId) {
+        Role role = roleMapper.selectOne(
+                new QueryWrapper<Role>().eq("role_code", DEFAULT_ROLE_CODE)
+        );
+
+        if (role == null) {
+            return;
+        }
+
+        Long count = userRoleMapper.selectCount(
+                new QueryWrapper<UserRole>()
+                        .eq("user_id", userId)
+                        .eq("role_id", role.getId())
+        );
+
+        if (count != null && count > 0) {
+            return;
+        }
+
+        UserRole relation = new UserRole();
+        relation.setUserId(userId);
+        relation.setRoleId(role.getId());
+        userRoleMapper.insert(relation);
+    }
 
 }
