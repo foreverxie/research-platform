@@ -2,10 +2,12 @@ package com.research.platform.modules.user.controller;
 
 import com.research.platform.common.result.Result;
 import com.research.platform.modules.user.dto.UserLoginDTO;
+import com.research.platform.modules.user.dto.EmailVerificationCodeDTO;
 import com.research.platform.modules.user.dto.UserPasswordUpdateDTO;
 import com.research.platform.modules.user.dto.UserRegisterDTO;
 import com.research.platform.modules.user.dto.UserUpdateDTO;
 import com.research.platform.modules.user.service.IUserService;
+import com.research.platform.modules.user.service.EmailVerificationService;
 import com.research.platform.modules.user.vo.UserLoginVO;
 import com.research.platform.modules.user.vo.UserVO;
 import jakarta.validation.Valid;
@@ -16,9 +18,18 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final IUserService userService;
+    private final EmailVerificationService emailVerificationService;
 
-    public UserController(IUserService userService) {
+    public UserController(IUserService userService, EmailVerificationService emailVerificationService) {
         this.userService = userService;
+        this.emailVerificationService = emailVerificationService;
+    }
+
+    /** 发送注册邮箱验证码 */
+    @PostMapping("/register/email-code")
+    public Result<Void> sendRegistrationEmailCode(@Valid @RequestBody EmailVerificationCodeDTO dto) {
+        emailVerificationService.sendCode(dto.getEmail());
+        return Result.success("验证码已发送", null);
     }
 
     /**
