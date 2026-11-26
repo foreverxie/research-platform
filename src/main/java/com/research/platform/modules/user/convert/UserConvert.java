@@ -24,6 +24,7 @@ public class UserConvert {
         vo.setEmail(user.getEmail());
         vo.setNickname(user.getNickname());
         vo.setAvatar(user.getAvatar());
+        vo.setBio(user.getBio());
         vo.setStatus(user.getStatus());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setUpdatedAt(user.getUpdatedAt());

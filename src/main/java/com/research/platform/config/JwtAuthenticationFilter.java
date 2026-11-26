@@ -1,6 +1,11 @@
 
 package com.research.platform.config;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.research.platform.modules.role.entity.Role;
+import com.research.platform.modules.role.entity.UserRole;
+import com.research.platform.modules.role.mapper.RoleMapper;
+import com.research.platform.modules.role.mapper.UserRoleMapper;
 import com.research.platform.modules.user.entity.User;
 import com.research.platform.modules.user.mapper.UserMapper;
 import com.research.platform.utils.JwtUtils;
@@ -12,13 +17,15 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -26,14 +33,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtils jwtUtils;
     private final UserMapper userMapper;
     private final RedisSessionService redisSessionService;
+    private final UserRoleMapper userRoleMapper;
+    private final RoleMapper roleMapper;
 
     public JwtAuthenticationFilter(
             JwtUtils jwtUtils,
             UserMapper userMapper,
-            RedisSessionService redisSessionService) {
+            RedisSessionService redisSessionService,
+            UserRoleMapper userRoleMapper,
+            RoleMapper roleMapper) {
         this.jwtUtils = jwtUtils;
         this.userMapper = userMapper;
         this.redisSessionService = redisSessionService;
+        this.userRoleMapper = userRoleMapper;
+        this.roleMapper = roleMapper;
     }
 
     @Override
@@ -84,7 +97,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     new UsernamePasswordAuthenticationToken(
                                             userId,
                                             null,
-                                            Collections.emptyList()
+                                            buildAuthorities(userId)
                                     );
 
                             authentication.setDetails(
@@ -113,5 +126,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // 8. 继续执行后续过滤器
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 加载用户角色，转换为 Spring Security 权限（ROLE_ADMIN / ROLE_USER）
+     */
+    private List<SimpleGrantedAuthority> buildAuthorities(Long userId) {
+        List<UserRole> relations = userRoleMapper.selectList(
+                new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId));
+
+        if (relations.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> roleIds = relations.stream()
+                .map(UserRole::getRoleId)
+                .distinct()
+                .toList();
+
+        if (roleIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        for (Role role : roleMapper.selectBatchIds(roleIds)) {
+            if (role.getRoleCode() != null && !role.getRoleCode().isBlank()) {
+                authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getRoleCode()));
+            }
+        }
+
+        return authorities;
     }
 }

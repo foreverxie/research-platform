@@ -46,6 +46,12 @@ public class User {
     private String avatar;
 
     /**
+     * 个人简介
+     */
+    @TableField("bio")
+    private String bio;
+
+    /**
      * 用户状态：1正常，0禁用
      */
     @TableField("status")

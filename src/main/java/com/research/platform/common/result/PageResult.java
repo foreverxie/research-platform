@@ -1,5 +1,6 @@
 package com.research.platform.common.result;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.Data;
 
 import java.util.List;
@@ -28,5 +29,17 @@ public class PageResult<T> {
         this.current = current;
         this.size = size;
         this.records = records;
+    }
+
+    /**
+     * 由 MyBatis-Plus 分页对象转换
+     */
+    public static <T> PageResult<T> of(IPage<T> page) {
+        return new PageResult<>(
+                page.getTotal(),
+                page.getCurrent(),
+                page.getSize(),
+                page.getRecords()
+        );
     }
 }

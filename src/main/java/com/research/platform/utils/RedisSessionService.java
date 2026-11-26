@@ -5,6 +5,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class RedisSessionService {
@@ -56,6 +59,23 @@ public class RedisSessionService {
         String key = buildTokenKey(userId);
 
         stringRedisTemplate.delete(key);
+    }
+
+    /** 批量读取仍有有效登录会话的用户 */
+    public Map<Long, Boolean> getOnlineStatus(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> keys = userIds.stream().map(this::buildTokenKey).toList();
+        List<String> values = stringRedisTemplate.opsForValue().multiGet(keys);
+        Map<Long, Boolean> onlineStatus = new HashMap<>();
+        if (values == null) {
+            return onlineStatus;
+        }
+        for (int index = 0; index < userIds.size(); index++) {
+            onlineStatus.put(userIds.get(index), values.get(index) != null);
+        }
+        return onlineStatus;
     }
 
     /**

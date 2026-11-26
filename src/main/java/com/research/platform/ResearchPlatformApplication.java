@@ -6,7 +6,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 
 @SpringBootApplication
-@MapperScan("com.research.platform.modules.*.mapper")
+@MapperScan({
+        "com.research.platform.modules.*.mapper",
+        "com.research.platform.modules.admin.audit.mapper"
+})
 public class ResearchPlatformApplication {
 
     public static void main(String[] args) {

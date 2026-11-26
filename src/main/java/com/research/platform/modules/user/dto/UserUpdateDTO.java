@@ -25,4 +25,10 @@ public class UserUpdateDTO {
      */
     @Size(max = 500, message = "头像地址长度不能超过500个字符")
     private String avatar;
+
+    /**
+     * 个人简介
+     */
+    @Size(max = 500, message = "个人简介长度不能超过500个字符")
+    private String bio;
 }

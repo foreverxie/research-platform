@@ -2,6 +2,8 @@ package com.research.platform.modules.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.research.platform.common.result.PageResult;
 import com.research.platform.common.exception.BusinessException;
 import com.research.platform.modules.role.entity.Role;
 import com.research.platform.modules.role.entity.UserRole;
@@ -17,6 +19,7 @@ import com.research.platform.modules.user.mapper.UserMapper;
 import com.research.platform.modules.user.service.IUserService;
 import com.research.platform.modules.user.service.EmailVerificationService;
 import com.research.platform.modules.user.vo.UserLoginVO;
+import com.research.platform.modules.user.vo.AdminUserVO;
 import com.research.platform.modules.user.vo.UserVO;
 import com.research.platform.utils.CurrentUser;
 import com.research.platform.utils.JwtUtils;
@@ -185,6 +188,64 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     }
 
+    @Override
+    public PageResult<AdminUserVO> pageUsers(long pageNo, long pageSize, String keyword, Integer status) {
+        QueryWrapper<User> query = new QueryWrapper<>();
+        if (keyword != null && !keyword.isBlank()) {
+            String normalizedKeyword = keyword.trim();
+            query.and(wrapper -> wrapper
+                    .like("username", normalizedKeyword)
+                    .or().like("email", normalizedKeyword)
+                    .or().like("nickname", normalizedKeyword));
+        }
+        if (status != null) {
+            query.eq("status", status);
+        }
+        query.orderByDesc("created_at").orderByDesc("id");
+
+        Page<User> page = userMapper.selectPage(new Page<>(pageNo, pageSize), query);
+        List<Long> userIds = page.getRecords().stream().map(User::getId).toList();
+        var onlineStatus = redisSessionService.getOnlineStatus(userIds);
+        List<AdminUserVO> records = page.getRecords().stream().map(user -> {
+            AdminUserVO vo = new AdminUserVO();
+            UserVO userVO = toVO(user);
+            vo.setId(userVO.getId());
+            vo.setUsername(userVO.getUsername());
+            vo.setEmail(userVO.getEmail());
+            vo.setNickname(userVO.getNickname());
+            vo.setAvatar(userVO.getAvatar());
+            vo.setStatus(userVO.getStatus());
+            vo.setRoles(userVO.getRoles());
+            vo.setCreatedAt(userVO.getCreatedAt());
+            vo.setUpdatedAt(userVO.getUpdatedAt());
+            vo.setOnline(onlineStatus.getOrDefault(user.getId(), false));
+            return vo;
+        }).toList();
+        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), records);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UserVO updateUserStatus(Long userId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BusinessException(400, "账号状态只能为0或1");
+        }
+        if (userId.equals(CurrentUser.getCurrentUserId())) {
+            throw new BusinessException(400, "不能修改自己的账号状态");
+        }
+
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(404, "用户不存在");
+        }
+        user.setStatus(status);
+        userMapper.updateById(user);
+        if (status == 0) {
+            redisSessionService.deleteToken(userId);
+        }
+        return toVO(userMapper.selectById(userId));
+    }
+
     /**
      * 获取当前登录用户信息
      * @return 用户VO
@@ -271,6 +332,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (dto.getAvatar() != null) {
             String avatar = dto.getAvatar().trim();
             user.setAvatar(avatar.isEmpty() ? null : avatar);
+        }
+        if (dto.getBio() != null) {
+            String bio = dto.getBio().trim();
+            user.setBio(bio.isEmpty() ? null : bio);
         }
         userMapper.updateById(user);
 
