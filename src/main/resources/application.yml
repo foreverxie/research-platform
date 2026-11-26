@@ -1,0 +1,95 @@
+server:
+  port: 8081
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: research-platform
+  datasource:
+    url: jdbc:mysql://${research.datasource.host}:${research.datasource.port}/${research.datasource.database}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Singapore&allowPublicKeyRetrieval=true
+    driver-class-name: ${research.datasource.driver-class-name}
+    username: ${research.datasource.username}
+    password: ${research.datasource.password}
+  jackson:
+    time-zone: Asia/Singapore
+    date-format: yyyy-MM-dd HH:mm:ss
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 60MB
+      # 文献 PDF 直传 Spring Boot，限制类型与大小由业务层再次校验
+  data:
+    redis:
+      host: ${research.redis.host}
+      port: ${research.redis.port}
+      password: ${research.redis.password}
+      database: ${research.redis.database}
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+          time-between-eviction-runs: 10s
+  mail:
+    host: ${research.MAIL_HOST}
+    port: ${research.MAIL_PORT}
+    username: ${research.MAIL_USERNAME}
+    password: ${research.MAIL_PASSWORD}
+    protocol: ${research.MAIL_PROTOCOL}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+mybatis-plus:
+  type-aliases-package: com.research.platform.modules.*.entity    # 配置实体类扫描包
+  mapper-locations: classpath*:mapper/**/*.xml                    # 配置mapper扫描包,Mapper.xml文件路径，默认值
+
+  configuration:
+    map-underscore-to-camel-case: true   # 开启下划线映射驼峰命名法
+    # 使用 SLF4J 输出 SQL：由 logging.level 控制，避免控制台被全量 SQL 淹没
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+  global-config:
+    db-config:
+      id-type: auto
+
+logging:
+  level:
+    # 需要看 SQL 时把这一行临时改成 debug
+    com.research.platform: info
+  pattern:
+    dateformat: HH:mm:ss
+  charset:
+    console: UTF-8
+    file: UTF-8
+
+# JWT 配置
+jwt:
+  secret: ${research.JWT.JWT_SECRET}
+  # Token 有效期：2小时，单位毫秒
+  expiration: 7200000
+
+
+# 文件存储与 AI 服务
+research:
+  storage:
+    # 本地存储根目录；数据库只保存相对路径
+    root: ./storage
+    max-file-size: 52428800
+  ai:
+    # FastAPI 未部署时保持 false：AI 任务会明确失败，非 AI 业务照常可用
+    enabled: ${research.ai.AI_SERVICE_ENABLED}
+    base-url: ${research.ai.AI_SERVICE_BASE_URL}
+    # 服务间调用令牌，通过环境变量注入，不写入仓库
+    internal-token: ${research.ai.AI_INTERNAL_TOKEN}
+    connect-timeout-seconds: 5
+    # MinerU 云端解析可能需要几分钟，解析任务要等完整结果；可用环境变量覆盖
+    read-timeout-seconds: ${AI_READ_TIMEOUT_SECONDS:600}
+

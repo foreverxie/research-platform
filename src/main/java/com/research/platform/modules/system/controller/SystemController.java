@@ -3,6 +3,7 @@ package com.research.platform.modules.system.controller;
 import com.research.platform.common.result.Result;
 import com.research.platform.modules.system.service.ISystemService;
 import com.research.platform.modules.system.vo.SystemHealthVO;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +25,7 @@ public class SystemController {
      * 各依赖服务健康状态
      */
     @GetMapping("/health")
+    @PreAuthorize("hasRole('ADMIN')")
     public Result<SystemHealthVO> health() {
         return Result.success(systemService.health());
     }
