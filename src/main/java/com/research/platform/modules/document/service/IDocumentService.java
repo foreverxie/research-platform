@@ -63,13 +63,6 @@ public interface IDocumentService extends IService<Document> {
     void deleteDocument(Long documentId);
 
     /**
-     * 收藏 / 取消收藏
-     *
-     * @return 收藏后的状态，key 固定为 favorite
-     */
-    Map<String, Object> toggleFavorite(Long documentId);
-
-    /**
      * 当前解析版本的正文
      */
     DocumentContentVO getDocumentContent(Long documentId);

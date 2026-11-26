@@ -111,14 +111,6 @@ public class DocumentController {
     }
 
     /**
-     * 收藏 / 取消收藏
-     */
-    @PostMapping("/{id}/favorite")
-    public Result<Map<String, Object>> toggleFavorite(@PathVariable("id") Long id) {
-        return Result.success(documentService.toggleFavorite(id));
-    }
-
-    /**
      * 当前解析版本的正文
      */
     @GetMapping("/{id}/content")

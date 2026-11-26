@@ -47,8 +47,7 @@ import com.research.platform.modules.document.vo.DocumentVO;
 import com.research.platform.modules.document.vo.ParseRecordVO;
 import com.research.platform.modules.document.vo.ReparseResultVO;
 import com.research.platform.modules.document.vo.UploadResultVO;
-import com.research.platform.modules.favorite.entity.Favorite;
-import com.research.platform.modules.favorite.mapper.FavoriteMapper;
+import com.research.platform.modules.document.service.IDocumentFavoriteService;
 import com.research.platform.modules.note.entity.Note;
 import com.research.platform.modules.note.mapper.NoteMapper;
 import com.research.platform.modules.tag.entity.Tag;
@@ -119,7 +118,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
     private final AiTaskMapper aiTaskMapper;
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
-    private final FavoriteMapper favoriteMapper;
+    private final IDocumentFavoriteService favoriteService;
     private final NoteMapper noteMapper;
     private final AiAnalysisMapper aiAnalysisMapper;
     private final DocumentAccessService documentAccessService;
@@ -134,7 +133,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
                                AiTaskMapper aiTaskMapper,
                                CategoryMapper categoryMapper,
                                TagMapper tagMapper,
-                               FavoriteMapper favoriteMapper,
+                               IDocumentFavoriteService favoriteService,
                                NoteMapper noteMapper,
                                AiAnalysisMapper aiAnalysisMapper,
                                DocumentAccessService documentAccessService,
@@ -148,7 +147,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         this.aiTaskMapper = aiTaskMapper;
         this.categoryMapper = categoryMapper;
         this.tagMapper = tagMapper;
-        this.favoriteMapper = favoriteMapper;
+        this.favoriteService = favoriteService;
         this.noteMapper = noteMapper;
         this.aiAnalysisMapper = aiAnalysisMapper;
         this.documentAccessService = documentAccessService;
@@ -209,14 +208,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         }
 
         if (Boolean.TRUE.equals(query.getFavorite())) {
-            List<Long> documentIds = favoriteMapper.selectList(
-                            new LambdaQueryWrapper<Favorite>()
-                                    .eq(Favorite::getUserId, userId)
-                                    .select(Favorite::getDocumentId))
-                    .stream()
-                    .map(Favorite::getDocumentId)
-                    .distinct()
-                    .collect(Collectors.toList());
+            List<Long> documentIds = favoriteService.listDocumentIds(userId);
 
             if (documentIds.isEmpty()) {
                 return emptyPage(query);
@@ -555,35 +547,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         // 标签、收藏关联物理删除
         documentTagMapper.delete(new LambdaQueryWrapper<DocumentTag>()
                 .eq(DocumentTag::getDocumentId, documentId));
-        favoriteMapper.delete(new LambdaQueryWrapper<Favorite>()
-                .eq(Favorite::getDocumentId, documentId));
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> toggleFavorite(Long documentId) {
-        Long userId = CurrentUser.getCurrentUserId();
-        documentAccessService.requireOwned(userId, documentId);
-
-        Favorite existing = favoriteMapper.selectOne(new LambdaQueryWrapper<Favorite>()
-                .eq(Favorite::getUserId, userId)
-                .eq(Favorite::getDocumentId, documentId)
-                .last("LIMIT 1"));
-
-        Map<String, Object> result = new LinkedHashMap<>();
-
-        if (existing != null) {
-            favoriteMapper.deleteById(existing.getId());
-            result.put("favorite", false);
-        } else {
-            Favorite favorite = new Favorite();
-            favorite.setUserId(userId);
-            favorite.setDocumentId(documentId);
-            favoriteMapper.insert(favorite);
-            result.put("favorite", true);
-        }
-
-        return result;
+        favoriteService.removeForDocument(documentId);
     }
 
     /* ------------------------------------------------------------------ */
@@ -940,12 +904,8 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         }
 
         // 3. 收藏状态
-        Set<Long> favoriteDocumentIds = favoriteMapper.selectList(new LambdaQueryWrapper<Favorite>()
-                        .eq(Favorite::getUserId, userId)
-                        .in(Favorite::getDocumentId, documentIds))
-                .stream()
-                .map(Favorite::getDocumentId)
-                .collect(Collectors.toSet());
+        Set<Long> favoriteDocumentIds = new HashSet<>(
+                favoriteService.listDocumentIds(userId, documentIds));
 
         // 4. 原始 PDF 大小（同一文献取最新一条）
         Map<Long, Long> fileSizes = new HashMap<>();
